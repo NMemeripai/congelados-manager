@@ -65,6 +65,14 @@ src/
 | `ventas` | fecha (YYYY-MM-DD), cliente, metodoPago, items[{productoId, nombre, unidad, cantidad, precioUnit, costoUnit}], total, costoTotal, ganancia |
 | `gastos` | fecha, categoria, descripcion, monto |
 
+## Carga por voz
+
+En **Nueva venta** y **Nuevo gasto** hay un botón 🎤. Dictás *"vendí 2 kilos de ravioles de verdura a 9000, pagó con transferencia"* y el formulario se completa solo; revisás y guardás. También se puede escribir la frase.
+
+- El dictado lo hace el navegador (gratis). Funciona en Chrome/Edge, en PC y Android. En Firefox solo se puede escribir.
+- **Sin configurar nada** usa un intérprete básico que entiende frases típicas (cantidades, "kilo y medio", "9 mil", "ayer", forma de pago, cliente).
+- **Con IA (recomendado)**: importá `n8n/carga-por-voz.json` en n8n, pegá tu API key de Gemini en el nodo *Gemini*, activá el workflow y cargá la URL *Production* del webhook en la variable `VITE_VOZ_WEBHOOK_URL` (Render → Environment) y redeployá. Si n8n no responde, la app vuelve sola al modo básico.
+
 ## Próximo paso posible
 
 Conectar WhatsApp con el mismo pipeline de n8n + Gemini de Barber Manager, para que un mensaje como *"vendí 3 kg de ravioles de verdura a 9000"* cree la venta en `ventas` con el formato de arriba.
