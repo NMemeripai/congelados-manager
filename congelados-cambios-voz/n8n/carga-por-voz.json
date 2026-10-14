@@ -1,0 +1,142 @@
+{
+  "name": "Congelados - carga por voz",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "voz-congelados",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "28d25f16-4c9f-4622-98f8-b3fd26fbb65c",
+      "name": "Webhook voz",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "339f92bd-8862-49c6-a08c-b5a29dc8b66c"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recibe lo que manda la app y arma el pedido para Gemini.\nconst raw = $json.body;\nconst d = typeof raw === 'string' ? JSON.parse(raw) : (raw || {});\n\nconst productos = (d.productos || [])\n  .map(p => `- id: ${p.id} | ${p.nombre} | se vende por ${p.unidad} | precio actual $${p.precio}`)\n  .join('\\n');\n\nlet instrucciones;\nif (d.tipo === 'gasto') {\n  instrucciones = `Sos un asistente que registra GASTOS de un negocio de pastas frescas en Argentina.\nHoy es ${d.hoy}. Interpretá la frase y devolvé SOLO este JSON:\n{\"fecha\":\"YYYY-MM-DD\",\"monto\":number,\"categoria\":string,\"descripcion\":string}\n- categoria tiene que ser EXACTAMENTE una de: ${JSON.stringify(d.categorias)}. Si no encaja, \"Otros\".\n- \"ayer\"/\"anteayer\" se calculan desde hoy. Si no dice fecha, hoy.\n- \"45 mil\" = 45000, \"1 palo\" = 1000000, \"lucas\" = miles.\n- descripcion: corta y clara, en castellano, sin el monto.`;\n} else {\n  instrucciones = `Sos un asistente que registra VENTAS de un negocio de pastas frescas en Argentina.\nHoy es ${d.hoy}. Productos cargados:\n${productos}\n\nInterpretá la frase y devolvé SOLO este JSON:\n{\"fecha\":\"YYYY-MM-DD\",\"cliente\":string,\"metodoPago\":string|null,\"items\":[{\"productoId\":string,\"cantidad\":number,\"precioUnit\":number|null}]}\n- productoId tiene que ser uno de los id de la lista. Elegí el producto más parecido a lo que se dijo. Si no hay ninguno parecido, no lo incluyas.\n- cantidad en la unidad de venta del producto: \"medio kilo\" = 0.5, \"kilo y medio\" = 1.5, \"500 gramos\" = 0.5 si se vende por kg, \"una docena\" = 12 si se vende por unidad.\n- precioUnit es el precio POR UNIDAD de venta. Si dicen el total (\"3 kilos por 27 mil\"), dividilo por la cantidad. Si no dicen precio, null.\n- \"9 mil\" = 9000, \"lucas\" = miles.\n- metodoPago tiene que ser EXACTAMENTE uno de: ${JSON.stringify(d.metodosPago)} o null si no lo dice. \"fiado\" = \"Cuenta corriente\", \"MP\" = \"Mercado Pago\".\n- cliente: el nombre si lo dice, si no \"\".\n- \"ayer\"/\"anteayer\" se calculan desde hoy. Si no dice fecha, hoy.`;\n}\n\nreturn [{\n  json: {\n    tipo: d.tipo,\n    gemini: {\n      contents: [{ role: 'user', parts: [{ text: instrucciones + '\\n\\nFrase: \"' + d.texto + '\"' }] }],\n      generationConfig: { temperature: 0, responseMimeType: 'application/json' }\n    }\n  }\n}];"
+      },
+      "id": "264a7da3-607e-4d66-9590-ad33bddd13e1",
+      "name": "Armar prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=PEGAR_TU_API_KEY_DE_GEMINI",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.gemini) }}",
+        "options": {}
+      },
+      "id": "3c83f848-a27e-4dea-a46d-948d044dc2ee",
+      "name": "Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Saca el JSON de la respuesta de Gemini.\nconst texto = $json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\nlet datos;\ntry {\n  datos = JSON.parse(texto.replace(/```json|```/g, '').trim());\n} catch (e) {\n  datos = {};\n}\nreturn [{ json: datos }];"
+      },
+      "id": "28bc87f7-530b-4e4c-96e9-89559176d87a",
+      "name": "Leer respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "577bb00d-100c-4af2-89a1-196017fea981",
+      "name": "Responder a la app",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook voz": {
+      "main": [
+        [
+          {
+            "node": "Armar prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini": {
+      "main": [
+        [
+          {
+            "node": "Leer respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer respuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder a la app",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
