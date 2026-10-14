@@ -11,7 +11,11 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const unsubscribe = watchAuthState(async (firebaseUser) => {
       if (firebaseUser) {
-        const datos = await getUsuarioData(firebaseUser.uid);
+        // Si la base no deja leer (reglas sin publicar), igual entramos: los datos extra son opcionales.
+        const datos = await getUsuarioData(firebaseUser.uid).catch((e) => {
+          console.warn("No se pudieron leer los datos del usuario:", e);
+          return null;
+        });
         setUser({ uid: firebaseUser.uid, email: firebaseUser.email, ...datos });
         setRol(datos?.rol || null);
       } else {

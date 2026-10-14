@@ -13,7 +13,9 @@ export function useDictado({ onFinal } = {}) {
   const recRef = useRef(null);
   const finalRef = useRef("");
   const onFinalRef = useRef(onFinal);
-  onFinalRef.current = onFinal;
+  useEffect(() => {
+    onFinalRef.current = onFinal;
+  }, [onFinal]);
 
   useEffect(() => () => recRef.current?.abort(), []);
 
@@ -45,6 +47,10 @@ export function useDictado({ onFinal } = {}) {
         setError("Tenés que permitir el micrófono en el navegador.");
       } else if (e.error === "no-speech") {
         setError("No te escuché. Probá de nuevo más cerca del micrófono.");
+      } else if (e.error === "network") {
+        setError("Este navegador no puede usar el dictado (pasa en Brave, Opera o con VPN). Usá Chrome o escribí la frase abajo.");
+      } else if (e.error === "audio-capture") {
+        setError("No se encontró un micrófono.");
       } else if (e.error !== "aborted") {
         setError("No se pudo usar el micrófono (" + e.error + ").");
       }

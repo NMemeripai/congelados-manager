@@ -1,192 +1,144 @@
 import { useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Wheat, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Wheat, Search, PackagePlus, AlertTriangle } from "lucide-react";
 import DashboardLayout from "../components/layout/DashboardLayout";
+import InventarioTabs from "../components/InventarioTabs";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
-import Input from "../components/ui/Input";
-import Select from "../components/ui/Select";
-import Modal from "../components/ui/Modal";
+import IconButton from "../components/ui/IconButton";
+import Badge from "../components/ui/Badge";
 import ConfirmModal from "../components/ui/ConfirmModal";
 import EmptyState from "../components/ui/EmptyState";
 import PageLoader from "../components/ui/PageLoader";
-import { useInsumos, useProductos } from "../hooks/useColeccion";
+import FormInsumo from "../components/forms/FormInsumo";
+import FormCompra from "../components/forms/FormCompra";
+import { useNegocio } from "../hooks/useNegocio";
 import * as insumosService from "../services/insumosService";
-import { UNIDADES, UNIDADES_COMPRA, num, pesos, hoy } from "../lib/costeo";
+import { UNIDADES, pesos, cant, num, stockBajo, fechaLarga, valorInventario, parseFecha, hoy } from "../lib/costeo";
 
-const VACIO = { nombre: "", unidad: "kg", costo: "", proveedor: "" };
+const diasDesde = (f) => (f ? Math.round((parseFecha(hoy()) - parseFecha(f)) / 86400000) : null);
 
 export default function Insumos() {
-  const { data: insumos, loading } = useInsumos();
-  const { data: productos } = useProductos();
-  const [form, setForm] = useState(null); // null = cerrado
-  const [editId, setEditId] = useState(null);
+  const { insumos, productos, loading } = useNegocio();
+  const [form, setForm] = useState({ open: false, insumo: null });
+  const [compra, setCompra] = useState({ open: false, insumoId: null });
   const [aBorrar, setABorrar] = useState(null);
-  const [guardando, setGuardando] = useState(false);
   const [busqueda, setBusqueda] = useState("");
 
   const lista = useMemo(
-    () =>
-      [...insumos]
-        .filter((i) => i.nombre?.toLowerCase().includes(busqueda.toLowerCase()))
-        .sort((a, b) => a.nombre.localeCompare(b.nombre)),
+    () => [...insumos].filter((i) => (i.nombre || "").toLowerCase().includes(busqueda.toLowerCase())).sort((a, b) => a.nombre.localeCompare(b.nombre)),
     [insumos, busqueda]
   );
-
-  // Cuántas recetas usan cada insumo (para avisar antes de borrar).
   const usos = useMemo(() => {
     const map = {};
     for (const p of productos) for (const ing of p.ingredientes || []) map[ing.insumoId] = (map[ing.insumoId] || 0) + 1;
     return map;
   }, [productos]);
-
-  function abrirNuevo() {
-    setEditId(null);
-    setForm(VACIO);
-  }
-  function abrirEditar(i) {
-    setEditId(i.id);
-    setForm({ nombre: i.nombre, unidad: i.unidad, costo: String(i.costo ?? ""), proveedor: i.proveedor || "" });
-  }
-
-  async function guardar(e) {
-    e.preventDefault();
-    setGuardando(true);
-    try {
-      const data = {
-        nombre: form.nombre.trim(),
-        unidad: form.unidad,
-        costo: num(form.costo),
-        proveedor: form.proveedor.trim(),
-        precioActualizado: hoy(),
-      };
-      if (editId) await insumosService.actualizar(editId, data);
-      else await insumosService.crear(data);
-      setForm(null);
-    } finally {
-      setGuardando(false);
-    }
-  }
+  const valor = valorInventario(insumos, []).insumos;
+  const bajos = insumos.filter(stockBajo).length;
 
   return (
     <DashboardLayout
       title="Insumos"
-      actions={
-        <Button icon={Plus} onClick={abrirNuevo}>
-          Nuevo insumo
-        </Button>
+      toolbar={
+        <>
+          <Button icon={Plus} onClick={() => setForm({ open: true, insumo: null })} className="flex-1 sm:flex-none">
+            Nuevo insumo
+          </Button>
+          <Button variant="outline" icon={PackagePlus} onClick={() => setCompra({ open: true, insumoId: null })} disabled={!insumos.length} className="flex-1 sm:flex-none">
+            Registrar compra
+          </Button>
+        </>
       }
     >
-      <p className="mb-4 text-sm text-ink-500">
-        Cargá lo que comprás para producir y cuánto te cuesta. Cuando cambie un precio, actualizalo acá y el costo de
-        todas tus recetas se recalcula solo.
-      </p>
-
+      <InventarioTabs />
       {loading ? (
         <PageLoader />
       ) : insumos.length === 0 ? (
-        <EmptyState
-          icon={Wheat}
-          title="Todavía no cargaste insumos"
-          action={<Button icon={Plus} onClick={abrirNuevo}>Cargar el primero</Button>}
-        >
-          Por ejemplo: harina 000 a $X el kg, huevos a $X la docena, ricota a $X el kg.
+        <EmptyState icon={Wheat} title="Todavía no cargaste insumos" action={<Button icon={Plus} onClick={() => setForm({ open: true, insumo: null })}>Cargar el primero</Button>}>
+          Lo que comprás para producir y cuánto te cuesta: harina $X el kg, huevos $X la docena, ricota $X el kg.
         </EmptyState>
       ) : (
-        <Card className="p-0">
-          <div className="border-b border-ink-300/30 p-3">
-            <div className="relative">
-              <Search size={16} className="absolute left-3 top-3 text-ink-500" />
-              <input
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                placeholder="Buscar insumo…"
-                className="w-full rounded-xl bg-surface-subtle py-2.5 pl-9 pr-3 text-sm outline-none"
-              />
-            </div>
-          </div>
-          <div className="divide-y divide-ink-300/30">
-            {lista.map((i) => (
-              <div key={i.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-ink-900">{i.nombre}</div>
-                  <div className="text-xs text-ink-500">
-                    {i.proveedor ? `${i.proveedor} · ` : ""}
-                    actualizado {i.precioActualizado || "—"}
-                    {usos[i.id] ? ` · en ${usos[i.id]} receta${usos[i.id] > 1 ? "s" : ""}` : ""}
-                  </div>
-                </div>
-                <div className="text-right text-sm font-semibold tabular-nums text-ink-900">
-                  {pesos(i.costo)}
-                  <span className="font-normal text-ink-500"> / {UNIDADES[i.unidad]?.label || i.unidad}</span>
-                </div>
-                <button onClick={() => abrirEditar(i)} className="rounded-lg p-2 text-ink-500 hover:bg-surface-muted">
-                  <Pencil size={16} />
-                </button>
-                <button onClick={() => setABorrar(i)} className="rounded-lg p-2 text-ink-500 hover:bg-red-50 hover:text-red-600">
-                  <Trash2 size={16} />
-                </button>
+        <>
+          <div className="mb-4 grid grid-cols-2 gap-3">
+            <Card className="p-4">
+              <div className="text-xs font-medium uppercase tracking-wide text-ink-500">Valor en insumos</div>
+              <div className="text-xl font-semibold tabular-nums text-ink-900">{pesos(valor)}</div>
+            </Card>
+            <Card className="p-4">
+              <div className="text-xs font-medium uppercase tracking-wide text-ink-500">Stock bajo</div>
+              <div className={`text-xl font-semibold tabular-nums ${bajos ? "text-red-700" : "text-ink-900"}`}>
+                {bajos} {bajos === 1 ? "insumo" : "insumos"}
               </div>
-            ))}
+            </Card>
           </div>
-        </Card>
+
+          <div className="relative mb-3">
+            <label htmlFor="buscar-insumo" className="sr-only">
+              Buscar insumo
+            </label>
+            <Search size={18} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-500" />
+            <input
+              id="buscar-insumo"
+              type="search"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar insumo…"
+              className="min-h-11 w-full rounded-xl border border-ink-300/70 bg-surface pl-10 pr-3 text-base sm:text-sm"
+            />
+          </div>
+
+          <ul className="grid gap-3 lg:grid-cols-2">
+            {lista.map((i) => {
+              const bajo = stockBajo(i);
+              const negativo = num(i.stock) < 0;
+              const viejo = diasDesde(i.precioActualizado) > 30;
+              const u = UNIDADES[i.unidad]?.label || i.unidad;
+              return (
+                <li key={i.id}>
+                  <Card className="p-4">
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <h2 className="truncate text-base font-semibold text-ink-900">{i.nombre}</h2>
+                        <p className="text-sm text-ink-500">
+                          {pesos(i.costo)} / {u}
+                          {i.proveedor ? ` · ${i.proveedor}` : ""}
+                        </p>
+                      </div>
+                      <IconButton icon={PackagePlus} tono="brand" label={`Registrar compra de ${i.nombre}`} onClick={() => setCompra({ open: true, insumoId: i.id })} />
+                      <IconButton icon={Pencil} label={`Editar ${i.nombre}`} onClick={() => setForm({ open: true, insumo: i })} />
+                      <IconButton icon={Trash2} tono="danger" label={`Eliminar ${i.nombre}`} onClick={() => setABorrar(i)} />
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-end justify-between gap-2">
+                      <div>
+                        <div className="text-xs text-ink-500">En stock</div>
+                        <div className={`text-lg font-semibold tabular-nums ${negativo || bajo ? "text-red-700" : "text-ink-900"}`}>
+                          {cant(i.stock)} {u}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap justify-end gap-1.5">
+                        {negativo && <Badge color="danger" icon={AlertTriangle}>Stock negativo</Badge>}
+                        {bajo && !negativo && <Badge color="danger" icon={AlertTriangle}>Stock bajo (mín. {cant(i.stockMinimo)})</Badge>}
+                        {viejo && <Badge color="warning">Precio de hace {diasDesde(i.precioActualizado)} días</Badge>}
+                        {usos[i.id] > 0 && <Badge>En {usos[i.id]} receta{usos[i.id] > 1 ? "s" : ""}</Badge>}
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-ink-500">Precio actualizado: {fechaLarga(i.precioActualizado)}</p>
+                  </Card>
+                </li>
+              );
+            })}
+          </ul>
+          {lista.length === 0 && <p className="py-8 text-center text-sm text-ink-500">No hay insumos que coincidan con “{busqueda}”.</p>}
+        </>
       )}
 
-      <Modal open={!!form} onClose={() => setForm(null)} title={editId ? "Editar insumo" : "Nuevo insumo"}>
-        {form && (
-          <form onSubmit={guardar} className="flex flex-col gap-4">
-            <Input
-              label="Nombre"
-              value={form.nombre}
-              onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-              placeholder="Harina 000"
-              required
-              autoFocus
-            />
-            <div className="grid grid-cols-2 gap-3">
-              <Select label="Se compra por" value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })}>
-                {UNIDADES_COMPRA.map((u) => (
-                  <option key={u} value={u}>
-                    {UNIDADES[u].label}
-                  </option>
-                ))}
-              </Select>
-              <Input
-                label={`Costo por ${UNIDADES[form.unidad].label}`}
-                inputMode="decimal"
-                value={form.costo}
-                onChange={(e) => setForm({ ...form, costo: e.target.value })}
-                placeholder="0"
-                required
-              />
-            </div>
-            <Input
-              label="Proveedor (opcional)"
-              value={form.proveedor}
-              onChange={(e) => setForm({ ...form, proveedor: e.target.value })}
-            />
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="secondary" onClick={() => setForm(null)}>
-                Cancelar
-              </Button>
-              <Button type="submit" loading={guardando}>
-                Guardar
-              </Button>
-            </div>
-          </form>
-        )}
-      </Modal>
-
-      <ConfirmModal
-        open={!!aBorrar}
-        onClose={() => setABorrar(null)}
-        onConfirm={() => insumosService.eliminar(aBorrar.id)}
-        title="Eliminar insumo"
-      >
-        ¿Eliminar <b>{aBorrar?.nombre}</b>?
+      <FormInsumo open={form.open} insumo={form.insumo} onClose={() => setForm({ open: false, insumo: null })} />
+      <FormCompra open={compra.open} insumoInicial={compra.insumoId} insumos={insumos} onClose={() => setCompra({ open: false, insumoId: null })} />
+      <ConfirmModal open={!!aBorrar} onClose={() => setABorrar(null)} onConfirm={() => insumosService.eliminar(aBorrar.id)} title="Eliminar insumo">
+        ¿Eliminar <strong>{aBorrar?.nombre}</strong>?
         {usos[aBorrar?.id] > 0 && (
-          <span className="mt-2 block text-amber-700">
-            Ojo: lo usan {usos[aBorrar.id]} receta(s). Van a quedar con un ingrediente faltante y el costo les va a dar
-            más bajo de lo real.
+          <span className="mt-2 block font-medium text-amber-800">
+            Lo usan {usos[aBorrar.id]} receta(s): van a quedar con un insumo faltante y el costo les va a dar más bajo de lo real.
           </span>
         )}
       </ConfirmModal>

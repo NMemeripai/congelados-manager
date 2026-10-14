@@ -15,6 +15,7 @@ import {
   query,
   orderByChild,
   serverTimestamp as rtdbServerTimestamp,
+  increment,
 } from "firebase/database";
 import { db } from "./config";
 
@@ -82,6 +83,28 @@ export function listenToCollection(path, callback, onError) {
     }
   );
   return unsubscribe;
+}
+
+/** Genera una clave nueva en un path sin escribir nada todavía. */
+export function nuevaClave(path) {
+  return push(pathRef(path)).key;
+}
+
+/** Marca para sumar/restar a un número en una escritura atómica. */
+export const inc = (n) => ({ __inc: n });
+/** Marca de fecha/hora del servidor. */
+export const ahora = () => rtdbServerTimestamp();
+
+/**
+ * Escribe varios paths de una sola vez (todo o nada).
+ * cambios: { "ventas/abc": {...}, "productos/xyz/stock": inc(-2), "compras/old": null }
+ */
+export async function aplicarCambios(cambios) {
+  const upd = {};
+  for (const [path, valor] of Object.entries(cambios)) {
+    upd[path] = valor && typeof valor === "object" && "__inc" in valor ? increment(valor.__inc) : valor;
+  }
+  await update(ref(db), upd);
 }
 
 export { ref, push, set, update, remove, get, query, orderByChild, rtdbServerTimestamp as serverTimestamp };

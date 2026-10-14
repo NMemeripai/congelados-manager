@@ -232,3 +232,163 @@ export function gastosPorCategoria(gastos, mes) {
     .map(([categoria, monto]) => ({ categoria, monto }))
     .sort((a, b) => b.monto - a.monto);
 }
+
+// ---------- Redondeo ----------
+/** Evita arrastrar errores de coma flotante (0.1 + 0.2) al sumar stock. */
+export function redondear(v, dec = 3) {
+  const f = 10 ** dec;
+  return Math.round(num(v) * f) / f;
+}
+
+// ---------- Rangos de fechas ----------
+/** fecha "YYYY-MM-DD" dentro de [desde, hasta] (ambos incluidos). */
+export const enRango = (fecha, desde, hasta) => !!fecha && fecha >= desde && fecha <= hasta;
+
+/** Totales de un período: ingresos, costo de lo vendido, gastos, ganancias y márgenes. */
+export function totalesRango(ventas, gastos, desde, hasta) {
+  const f = filaVacia(`${desde}..${hasta}`);
+  for (const v of ventas || []) {
+    if (!enRango(v.fecha, desde, hasta)) continue;
+    f.ingresos += num(v.total);
+    f.costoVendido += num(v.costoTotal);
+    f.cantidadVentas += 1;
+  }
+  for (const g of gastos || []) {
+    if (enRango(g.fecha, desde, hasta)) f.gastos += num(g.monto);
+  }
+  f.gananciaBruta = f.ingresos - f.costoVendido;
+  f.gananciaNeta = f.gananciaBruta - f.gastos;
+  f.margenBruto = f.ingresos > 0 ? (f.gananciaBruta / f.ingresos) * 100 : null;
+  f.margenNeto = f.ingresos > 0 ? (f.gananciaNeta / f.ingresos) * 100 : null;
+  return f;
+}
+
+/** Productos vendidos en el período, ordenados por ganancia (los más rentables primero). */
+export function productosRango(ventas, desde, hasta) {
+  const map = {};
+  for (const v of ventas || []) {
+    if (!enRango(v.fecha, desde, hasta)) continue;
+    for (const it of v.items || []) {
+      const key = it.productoId || it.nombre;
+      const r = (map[key] ||= { id: key, nombre: it.nombre, unidad: it.unidad, cantidad: 0, ingresos: 0, costo: 0 });
+      r.cantidad += num(it.cantidad);
+      r.ingresos += num(it.cantidad) * num(it.precioUnit);
+      r.costo += num(it.cantidad) * num(it.costoUnit);
+    }
+  }
+  return Object.values(map)
+    .map((r) => ({ ...r, ganancia: r.ingresos - r.costo, margen: margen(r.ingresos, r.costo) }))
+    .sort((a, b) => b.ganancia - a.ganancia);
+}
+
+/** Gastos del período por categoría, con lo que representan sobre los ingresos. */
+export function gastosCategoriaRango(gastos, desde, hasta) {
+  const map = {};
+  for (const g of gastos || []) {
+    if (!enRango(g.fecha, desde, hasta)) continue;
+    const c = g.categoria || "Otros";
+    map[c] = (map[c] || 0) + num(g.monto);
+  }
+  return Object.entries(map)
+    .map(([categoria, monto]) => ({ categoria, monto }))
+    .sort((a, b) => b.monto - a.monto);
+}
+
+/**
+ * Serie para el gráfico. Agrupa por día si el período es corto (≤ 62 días), si no por mes.
+ * Devuelve [{ clave, etiqueta, ingresos, costos, ganancia }]
+ */
+export function serieRango(ventas, gastos, desde, hasta) {
+  const dias = diasEntre(desde, hasta);
+  const porDia = dias <= 62;
+  const claves = [];
+  if (porDia) {
+    let d = parseFecha(desde);
+    const fin = parseFecha(hasta);
+    while (d <= fin) {
+      claves.push(fmtFecha(d));
+      d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+    }
+  } else {
+    let d = parseFecha(desde.slice(0, 7) + "-01");
+    const fin = parseFecha(hasta);
+    while (d <= fin) {
+      claves.push(fmtFecha(d).slice(0, 7));
+      d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    }
+  }
+  const idx = Object.fromEntries(claves.map((k) => [k, { clave: k, ingresos: 0, costos: 0, ganancia: 0 }]));
+  const clave = (fecha) => (porDia ? fecha : fecha.slice(0, 7));
+  for (const v of ventas || []) {
+    if (!enRango(v.fecha, desde, hasta)) continue;
+    const r = idx[clave(v.fecha)];
+    if (r) {
+      r.ingresos += num(v.total);
+      r.costos += num(v.costoTotal);
+    }
+  }
+  for (const g of gastos || []) {
+    if (!enRango(g.fecha, desde, hasta)) continue;
+    const r = idx[clave(g.fecha)];
+    if (r) r.costos += num(g.monto);
+  }
+  return claves.map((k) => {
+    const r = idx[k];
+    const etiqueta = porDia ? `${k.slice(8, 10)}/${k.slice(5, 7)}` : nombreMes(k);
+    return { ...r, etiqueta, ganancia: r.ingresos - r.costos };
+  });
+}
+
+// ---------- Fechas ----------
+export function parseFecha(s) {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+export function fmtFecha(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+export function diasEntre(desde, hasta) {
+  return Math.round((parseFecha(hasta) - parseFecha(desde)) / 86400000) + 1;
+}
+export const fechaCorta = (f) => (f ? `${f.slice(8, 10)}/${f.slice(5, 7)}` : "—");
+export const fechaLarga = (f) => (f ? `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(0, 4)}` : "—");
+
+// ---------- Inventario ----------
+/**
+ * Valor del inventario a costo actual.
+ * insumos: stock (en su unidad de compra) × costo. productos: stock × costo unitario de la receta.
+ * El stock negativo no suma (indica que falta registrar una compra o producción).
+ */
+export function valorInventario(insumos, productosCosteados) {
+  const vi = (insumos || []).reduce((s, i) => s + Math.max(0, num(i.stock)) * num(i.costo), 0);
+  const vp = (productosCosteados || []).reduce((s, p) => s + Math.max(0, num(p.stock)) * num(p.calc?.costoUnitario), 0);
+  return { insumos: vi, productos: vp, total: vi + vp };
+}
+
+/** ¿Está por debajo del mínimo? (sin mínimo cargado no alerta) */
+export const stockBajo = (item) => num(item.stockMinimo) > 0 && num(item.stock) <= num(item.stockMinimo);
+
+/** Cuánto de cada insumo consume producir `tandas` de un producto (en la unidad del insumo). */
+export function consumosProduccion(producto, insumosPorId, tandas) {
+  return (producto?.ingredientes || [])
+    .map((ing) => {
+      const insumo = insumosPorId[ing.insumoId];
+      if (!insumo) return null;
+      return {
+        insumoId: insumo.id,
+        nombre: insumo.nombre,
+        unidad: insumo.unidad,
+        cantidad: redondear(convertir(ing.cantidad, ing.unidad || insumo.unidad, insumo.unidad) * num(tandas)),
+        disponible: num(insumo.stock),
+      };
+    })
+    .filter(Boolean);
+}
+
+// ---------- Cuentas por cobrar ----------
+/** Ventas en cuenta corriente (fiado) todavía no cobradas. */
+export function porCobrar(ventas) {
+  const lista = (ventas || []).filter((v) => v.metodoPago === "Cuenta corriente" && !v.cobrada);
+  return { lista, total: lista.reduce((s, v) => s + num(v.total), 0) };
+}

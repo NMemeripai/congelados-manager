@@ -29,3 +29,5 @@ export const useInsumos = () => useColeccion("insumos");
 export const useProductos = () => useColeccion("productos");
 export const useVentas = () => useColeccion("ventas");
 export const useGastos = () => useColeccion("gastos");
+export const useCompras = () => useColeccion("compras");
+export const useProducciones = () => useColeccion("producciones");

@@ -3,6 +3,8 @@
     ".read": "auth != null",
     ".write": "auth != null",
     "ventas": { ".indexOn": ["fecha"] },
-    "gastos": { ".indexOn": ["fecha"] }
+    "gastos": { ".indexOn": ["fecha"] },
+    "compras": { ".indexOn": ["fecha"] },
+    "producciones": { ".indexOn": ["fecha"] }
   }
 }

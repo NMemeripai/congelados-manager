@@ -6,11 +6,14 @@ Está construido sobre la misma base que Barber Manager IA (React + Vite + Tailw
 
 ## Cómo se usa
 
+> Diseñado **mobile first**: en el celular hay barra inferior con un botón **+** para cargar rápido (venta, gasto, compra de insumo o producción). En la PC, barra lateral.
+
 1. **Insumos**: cargás lo que comprás y su costo (harina $X el kg, huevos $X la docena…).
 2. **Productos**: armás la receta de una tanda (qué insumos lleva, cuánto rinde, otros costos como gas o packaging) y tu % de ganancia. El sistema calcula el **costo por kg** y el **precio sugerido**. Podés fijar un precio a mano; si queda por debajo de tu objetivo te avisa.
 3. **Ventas**: registrás qué vendiste, cuánto y a qué precio. Cada venta **guarda el costo de ese día**, así la ganancia de meses anteriores no cambia cuando suben los insumos.
 4. **Gastos**: alquiler, sueldos, impuestos, etc. (lo que no está en las recetas).
-5. **Resumen**: ingresos, costo de lo vendido, gastos, ganancia neta y margen de cada mes, gráfico de 12 meses, tabla mes a mes y ranking de productos.
+5. **Inventario**: cada **compra de insumo** suma stock y actualiza el costo; cada **producción** suma stock al producto y descuenta los insumos de la receta; cada **venta** descuenta stock (y lo devuelve si se borra). Todo en escrituras atómicas. Podés poner un stock mínimo para recibir alertas.
+6. **Resumen**: ingresos, costo de lo vendido, gastos, ganancia neta y margen de cada mes, gráfico de 12 meses, tabla mes a mes y ranking de productos.
 
 ### Markup vs margen
 
@@ -18,6 +21,14 @@ Está construido sobre la misma base que Barber Manager IA (React + Vite + Tailw
 - **Margen**: qué parte del precio es ganancia. En ese mismo ejemplo, $4.000 / $14.000 = 28,6%.
 
 El sistema muestra los dos para que no haya confusión.
+
+### Dashboard
+
+Filtra por **día, semana, mes, año o rango personalizado** (el período elegido se comparte entre Resumen, Ventas, Gastos y Movimientos). Muestra ingresos, gastos operativos, costo de lo vendido, ganancia bruta y neta, margen, valor del inventario y fiado por cobrar; responde si estás ganando o perdiendo, los productos más rentables, los gastos a controlar (con variación contra el período anterior), alertas de stock y precios desactualizados, y el resumen mes a mes.
+
+### Accesibilidad
+
+Referencia WCAG 2.2 AA: etiquetas visibles asociadas, errores por campo, foco visible y atrapado en los diálogos (Escape cierra), objetivos táctiles de 44 px, “saltar al contenido”, gráfico con vista de tabla, respeto por *reducir movimiento*. Auditado con axe-core en 360 px y 1366 px: 0 problemas.
 
 ### Cuentas del resumen
 
@@ -64,6 +75,10 @@ src/
 | `productos` | nombre, unidadVenta, rinde, ingredientes[{insumoId, cantidad, unidad}], costosExtra, markupObjetivo, precioVenta |
 | `ventas` | fecha (YYYY-MM-DD), cliente, metodoPago, items[{productoId, nombre, unidad, cantidad, precioUnit, costoUnit}], total, costoTotal, ganancia |
 | `gastos` | fecha, categoria, descripcion, monto |
+| `compras` | fecha, insumoId, nombre, unidad, cantidad, costoUnit, total, proveedor |
+| `producciones` | fecha, productoId, nombre, unidad, tandas, cantidad, costoUnit, costoTotal, consumos[{insumoId, nombre, unidad, cantidad}] |
+
+`insumos` y `productos` además tienen `stock` y `stockMinimo`. Las ventas en cuenta corriente llevan `cobrada`.
 
 ## Carga por voz
 
