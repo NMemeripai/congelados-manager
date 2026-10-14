@@ -10,20 +10,11 @@ import ConfirmModal from "../components/ui/ConfirmModal";
 import EmptyState from "../components/ui/EmptyState";
 import PageLoader from "../components/ui/PageLoader";
 import SelectorMes from "../components/SelectorMes";
+import CargaPorVoz from "../components/CargaPorVoz";
+import { interpretar, CATEGORIAS_GASTO } from "../lib/voz";
 import { useGastos } from "../hooks/useColeccion";
 import * as gastosService from "../services/gastosService";
 import { gastosPorCategoria, num, pesos, hoy, mesDe } from "../lib/costeo";
-
-const CATEGORIAS_GASTO = [
-  "Alquiler",
-  "Luz / gas / agua",
-  "Sueldos",
-  "Monotributo / impuestos",
-  "Transporte / envíos",
-  "Mantenimiento / equipos",
-  "Publicidad",
-  "Otros",
-];
 
 const VACIO = { fecha: hoy(), categoria: CATEGORIAS_GASTO[0], descripcion: "", monto: "" };
 
@@ -143,6 +134,23 @@ export default function Gastos() {
       <Modal open={!!form} onClose={() => setForm(null)} title={editId ? "Editar gasto" : "Nuevo gasto"}>
         {form && (
           <form onSubmit={guardar} className="flex flex-col gap-4">
+            {!editId && (
+              <CargaPorVoz
+                ejemplo="pagué la luz 45 mil"
+                onInterpretar={async (texto) => {
+                  const { datos, aviso } = await interpretar("gasto", texto);
+                  if (!datos.monto) return { ok: false, texto: "No escuché el monto. Probá diciendo el número." };
+                  setForm((f) => ({
+                    ...f,
+                    fecha: datos.fecha || f.fecha,
+                    monto: String(datos.monto),
+                    categoria: datos.categoria,
+                    descripcion: datos.descripcion,
+                  }));
+                  return { ok: true, texto: (aviso ? aviso + " " : "") + "Revisá y tocá Guardar." };
+                }}
+              />
+            )}
             <div className="grid grid-cols-2 gap-3">
               <Input label="Fecha" type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} required />
               <Input

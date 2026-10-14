@@ -11,6 +11,8 @@ import EmptyState from "../components/ui/EmptyState";
 import PageLoader from "../components/ui/PageLoader";
 import Stat from "../components/ui/Stat";
 import SelectorMes from "../components/SelectorMes";
+import CargaPorVoz from "../components/CargaPorVoz";
+import { interpretar, METODOS_PAGO } from "../lib/voz";
 import { useInsumos, useProductos, useVentas } from "../hooks/useColeccion";
 import * as ventasService from "../services/ventasService";
 import {
@@ -26,7 +28,6 @@ import {
   margen,
 } from "../lib/costeo";
 
-const METODOS_PAGO = ["Efectivo", "Transferencia", "Mercado Pago", "Tarjeta", "Cuenta corriente"];
 
 export default function Ventas() {
   const { data: ventas, loading } = useVentas();
@@ -202,6 +203,29 @@ function FormVenta({ catalogo, onCancel, onSave }) {
 
   const cambiar = (idx, cambios) => setItems(items.map((it, i) => (i === idx ? { ...it, ...cambios } : it)));
 
+  // Completa el formulario con lo que se dictó. No guarda: el usuario revisa y confirma.
+  async function cargarPorVoz(texto) {
+    const productos = catalogo.map((p) => ({ id: p.id, nombre: p.nombre, unidadVenta: p.unidadVenta, precio: p.calc.precio }));
+    const { datos, aviso } = await interpretar("venta", texto, { productos });
+    if (!datos.items.length) {
+      return { ok: false, texto: "No reconocí ningún producto. Decí el nombre como está cargado." };
+    }
+    setItems(
+      datos.items.map((it) => {
+        const p = porId[it.productoId];
+        return {
+          productoId: it.productoId,
+          cantidad: String(it.cantidad),
+          precioUnit: String(it.precioUnit ?? Math.round(p.calc.precio)),
+        };
+      })
+    );
+    if (datos.fecha) setFecha(datos.fecha);
+    if (datos.cliente) setCliente(datos.cliente);
+    if (datos.metodoPago) setMetodoPago(datos.metodoPago);
+    return { ok: true, texto: (aviso ? aviso + " " : "") + "Revisá los datos y tocá Guardar venta." };
+  }
+
   async function guardar(e) {
     e.preventDefault();
     if (itemsCompletos.length === 0) return;
@@ -215,6 +239,10 @@ function FormVenta({ catalogo, onCancel, onSave }) {
 
   return (
     <form onSubmit={guardar} className="flex flex-col gap-4">
+      <CargaPorVoz
+        ejemplo={`vendí 2 kilos de ${catalogo[0]?.nombre.toLowerCase() || "ravioles"} a 9000, pagó con transferencia`}
+        onInterpretar={cargarPorVoz}
+      />
       <div className="grid gap-3 sm:grid-cols-3">
         <Input label="Fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required />
         <Input label="Cliente (opcional)" value={cliente} onChange={(e) => setCliente(e.target.value)} />
